@@ -1,0 +1,7 @@
+"pre_processing - resize" cost: 96 ms
+"pre_processing - blob" cost:   1 ms
+"inference" cost:       456 ms
+"post_processing - decode boxes" cost:  16 ms
+"post_processing - nms" cost:   12 ms
+"post_processing - decode mask" cost:   229 ms
+total cost:     813 ms

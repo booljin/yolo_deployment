@@ -1,0 +1,5 @@
+set( CUDAToolkit_ROOT_DIR
+  "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8")
+
+#set(TENSORRT_ROOT_PATH
+#"E:/work/print/flower/thirdpart/TensorRT-10.10.0.31")
