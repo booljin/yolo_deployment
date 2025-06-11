@@ -33,7 +33,7 @@ public:
     void draw_mask(cv::Mat& mask_img, const std::vector<SegmentationResult>& bboxes);
 
 private:
-    void post_processing_cpu(float* prob0, float* prob1, const ResizeInfo& resize_info, std::vector<std::pair<cv::Rect, cv::Mat>>& results, std::vector<std::pair<std::string, std::chrono::system_clock::time_point>>& tracer);
+    void post_processing_cpu(float* prob0, float* prob1, const ResizeInfo& resize_info, std::vector<std::pair<cv::Rect, cv::Mat>>& results);
 
 
 private:
