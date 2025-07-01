@@ -14,11 +14,24 @@ namespace YOLO{namespace TASK{namespace TRT{
 
 class Segment : public TaskTRT{
 public:
-    Segment(std::shared_ptr<YOLO::TRT::Model> model);
+    Segment(YOLO::MODEL::TRT::Model* model);
     ~Segment() override;
 public:
     TaskResult inference(TaskFlowContext*, void* work_space);
     TaskResult inference(TaskFlowTRTContext*, nvinfer1::IExecutionContext* work_space);
+
+private:
+	static void postprocess_segment_normal(
+		// 检测头相关
+		float* predict, int box_count, int class_count,
+		// mask头相关
+		float* mask_predict, int mask_w, int mask_h, int mask_dim,
+		// 配置相关
+		float confidence_threshold, float nms_threshold, float mask_threshold, int ret_limit,
+		float* d2s_matrix, float* s2d_matrix,
+		int input_w, int input_h,
+		YOLO::TASK::SegmentResult& output,
+		YOLO::TASK::TRT::TaskFlowTRTContext* ctx);
 private:
     // output0
     int _class_count;

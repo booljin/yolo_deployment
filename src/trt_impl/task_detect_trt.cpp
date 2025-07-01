@@ -10,12 +10,12 @@ void postprocess_detect_by_cuda(
         // 配置相关
         float confidence_threshold, float nms_threshold, int ret_limit,
         float* d2s_matrix,
-        std::vector<YOLO::TASK::DetectResult>& output,
+        YOLO::TASK::DetectResult& output,
         YOLO::TASK::TRT::TaskFlowTRTContext* ctx);
 
 using namespace YOLO::TASK::TRT;
 
-Detect::Detect(std::shared_ptr<YOLO::TRT::Model> model) : TaskTRT(){
+Detect::Detect(YOLO::MODEL::TRT::Model* model) : TaskTRT(model->alias(), model->task_type()){
     auto dims_i = model->engine()->getTensorShape("images");
     _input_batch = dims_i.d[0];
     _input_channel = dims_i.d[1];
@@ -44,14 +44,14 @@ YOLO::TASK::TaskResult Detect::inference(YOLO::TASK::TaskFlowContext* ctx, void*
 }
 
 YOLO::TASK::TaskResult Detect::inference(TaskFlowTRTContext* ctx, nvinfer1::IExecutionContext* work_space){
-	YOLO::TRT::CudaMemory<float> output;
+	YOLO::UTILS::TRT::CudaMemory<float> output;
     output.malloc(_output0_size);
-    work_space->setTensorAddress("images", ctx->input_buffer.gpu());
+    work_space->setTensorAddress("images", ctx->input);
 	work_space->setTensorAddress("output0", output.gpu());
     work_space->enqueueV3(ctx->stream);
-    std::vector<YOLO::TASK::DetectResult> result;
+    YOLO::TASK::DetectResult result;
     postprocess_detect_by_cuda(output.gpu(), _box_count, _class_count,
         _confidence_threshold, _nms_threshold, YOLO::TASK::TRT::BBOX_LIMIT,
-        ctx->d2s_matrix.cpu(), result, ctx);
+		ctx->preprocessing_cache[ctx->key].d2s_matrix.cpu(), result, ctx);
     return TaskResult(std::move(result));
 }

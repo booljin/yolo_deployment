@@ -7,11 +7,11 @@
 void postprocess_classify_by_cuda(
 	// 检测头相关
 	float* predict, int class_count,
-	std::vector<YOLO::TASK::ClassifyResult>& output,
+	YOLO::TASK::ClassifyResult& output,
 	YOLO::TASK::TRT::TaskFlowTRTContext* ctx);
 
 using namespace YOLO::TASK::TRT;
-Classify::Classify(std::shared_ptr<YOLO::TRT::Model> model) : TaskTRT(){
+Classify::Classify(YOLO::MODEL::TRT::Model* model) : TaskTRT(model->alias(), model->task_type()){
     auto dims_i = model->engine()->getTensorShape("images");
     _input_batch = dims_i.d[0];
     _input_channel = dims_i.d[1];
@@ -38,13 +38,13 @@ YOLO::TASK::TaskResult Classify::inference(YOLO::TASK::TaskFlowContext* ctx, voi
 }
 
 YOLO::TASK::TaskResult Classify::inference(TaskFlowTRTContext* ctx, nvinfer1::IExecutionContext* work_space){
-	YOLO::TRT::CudaMemory<float> output;
+	YOLO::UTILS::TRT::CudaMemory<float> output;
     output.malloc(_output0_size);
-    work_space->setTensorAddress("images", ctx->input_buffer.gpu());
+    work_space->setTensorAddress("images", ctx->input);
 	work_space->setTensorAddress("output0", output.gpu());
     work_space->enqueueV3(ctx->stream);
-    output.memcpy_to_cpu_sync(ctx->stream);
-    std::vector<YOLO::TASK::ClassifyResult> result;
+    output.memcpy_to_cpu_sync();
+    YOLO::TASK::ClassifyResult result;
 	postprocess_classify_by_cuda(output.cpu(), _class_count, result, ctx);
 
     return TaskResult(std::move(result));

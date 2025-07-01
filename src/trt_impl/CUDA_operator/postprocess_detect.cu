@@ -131,15 +131,15 @@ void postprocess_detect_by_cuda(
         // 配置相关
         float confidence_threshold, float nms_threshold, int ret_limit,
         float* d2s_matrix,
-        std::vector<YOLO::TASK::DetectResult>& output,
+        YOLO::TASK::DetectResult& output,
         YOLO::TASK::TRT::TaskFlowTRTContext* ctx)
 {
-    YOLO::TRT::CudaMemory<float> temparray;
+    YOLO::UTILS::TRT::CudaMemory<float> temparray;
     temparray.malloc(YOLO::TASK::TRT::NUM_OF_BOX_ELEMENTS * ret_limit + 1);
     // 解析检测头，将合适的box写入temparray，并进行nms操作。此时可以从temparray中提取所有有效的bbox
     decode_boxes(predict, box_count, class_count, confidence_threshold, nms_threshold, d2s_matrix, temparray.gpu(), ret_limit, ctx);
     // 将temparray从device拷贝到host，准备尽心下一步mask头解析
-    temparray.memcpy_to_cpu_sync(ctx->stream);
+    temparray.memcpy_to_cpu_sync();
 
     int count = std::min((int)temparray.cpu()[0], ret_limit);
     output.reserve(count);
@@ -149,7 +149,7 @@ void postprocess_detect_by_cuda(
             // 这个box被抑制了，不需要输出
             continue;
         }
-        YOLO::TASK::DetectResult result;
+        YOLO::TASK::DetectResultItem result;
         result.left = cur_item[0];
         result.top = cur_item[1];
         result.right = cur_item[2];

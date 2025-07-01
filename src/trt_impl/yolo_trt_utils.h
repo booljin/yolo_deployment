@@ -19,6 +19,7 @@ do\
 
 
 namespace YOLO {
+namespace UTILS{
 namespace TRT{
 
 class Logger : public nvinfer1::ILogger
@@ -47,6 +48,14 @@ enum MemcpyKind {
 template<class T>
 class CudaMemory {
 public:
+	CudaMemory() = default;
+	CudaMemory(CudaMemory&& s) {
+		_host = s._host;
+		s._host = nullptr;
+		_device = s._device;
+		s._device = nullptr;
+	}
+
     CudaMemory& malloc(size_t len) {
         release();
         _len = len;
@@ -56,12 +65,14 @@ public:
     T* cpu() {
         if (_len > 0 && _host == nullptr) {
 			CUDA_CHECK(cudaMallocHost((void**)&_host, _len * sizeof(T)));
+			CUDA_CHECK(cudaMemset((void*)_host, 0, _len * sizeof(T)));
         }
         return _host;
     }
     T* gpu() {
         if (_len > 0 && _device == nullptr) {
 			CUDA_CHECK(cudaMalloc((void**)&_device, _len * sizeof(T)));
+			CUDA_CHECK(cudaMemset((void*)_device, 0, _len * sizeof(T)));
         }
         return _device;
     }
@@ -77,32 +88,42 @@ public:
 			CUDA_CHECK(cudaMemcpyAsync(gpu(), _host, _len * sizeof(T), cudaMemcpyHostToDevice, stream));
         }
     }
+    void memcpy_sync(int kind) {
+        if (kind == MemcpyDeviceToHost) {
+            if (_device == nullptr)
+                return;
+			CUDA_CHECK(cudaMemcpy(cpu(), _device, _len * sizeof(T), cudaMemcpyDeviceToHost));
+        } else {
+            if (_host == nullptr)
+                return;
+			CUDA_CHECK(cudaMemcpy(gpu(), _host, _len * sizeof(T), cudaMemcpyHostToDevice));
+        }
+    }
 
-    inline void memcpy_to_cpu(cudaStream_t& stream) {
+    inline void memcpy_to_cpu_sync() {
         if (_len == 0)
             return;
-        memcpy_async(MemcpyDeviceToHost, stream);
+        memcpy_sync(MemcpyDeviceToHost);
     }
-    inline void memcpy_to_gpu(cudaStream_t& stream) {
+    inline void memcpy_to_gpu_sync() {
         if (_len == 0)
             return;
-        memcpy_async(MemcpyHostToDevice, stream);
+        memcpy_sync(MemcpyHostToDevice);
     }
 
-    inline void memcpy_to_cpu_sync(cudaStream_t& stream) {
+    inline void memcpy_to_cpu_async(cudaStream_t& stream) {
         if (_len == 0)
             return;
         memcpy_async(MemcpyDeviceToHost, stream);
 		CUDA_CHECK(cudaStreamSynchronize(stream));
 
     }
-    inline void memcpy_to_gpu_sync(cudaStream_t& stream) {
+    inline void memcpy_to_gpu_async(cudaStream_t& stream) {
         if (_len == 0)
             return;
         memcpy_async(MemcpyHostToDevice, stream);
 		CUDA_CHECK(cudaStreamSynchronize(stream));
     }
-
 
     size_t len() { return _len; }
 
@@ -129,6 +150,7 @@ private:
     T* _host = nullptr;
 };
 
-}
-}
+void dump_preprocess_img(CudaMemory<float>& img, const std::string& path);
+
+}}}
 #endif // __YOLO_TRT_UTILS_H__

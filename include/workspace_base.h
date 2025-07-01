@@ -6,18 +6,14 @@
 #include "yolo_defines.h"
 
 namespace YOLO{
+namespace WORKSPACE{
 
-class ModelAny;
-
-class WorkSpaceAny{
+class Any{
 public:
-    virtual ~WorkSpaceAny() = default;
-public:
-    virtual bool create_by(const std::vector<std::shared_ptr<ModelAny>>& models) = 0;
-    virtual void* context_at(int index) = 0;
+    virtual ~Any() = default;
 protected:
-    ModelType _type = ModelType::MODEL_TYPE_UNKNOWN;
+    YOLO::ModelType _type = YOLO::ModelType::MODEL_TYPE_UNKNOWN;
 };
 
-}
+}}
 #endif // __YOLO_WORKSPACE_BASE_H__

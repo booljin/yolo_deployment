@@ -18,7 +18,7 @@ struct TaskFlowTRTContext;
 
 class TaskTRT : public TaskAny{
 public:
-    TaskTRT() = default;;
+	TaskTRT(const std::string& alias, YOLO::TaskType task_type) :TaskAny(alias, task_type) {}
 	~TaskTRT() override {};
 
 public:
@@ -27,8 +27,6 @@ public:
 
 
 
-}
-}
-}
+}}}
 
 #endif // __YOLO_TASK_TRT_H__

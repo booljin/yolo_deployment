@@ -117,7 +117,7 @@ static __global__ void nms_kernel(float* temparray, int bbox_len, int ret_limit,
     }
 }
 
-static void decode_boxes(float* predict, int box_count, int class_count, float confidence_threshold, float nms_threshold, float* d2s_matrix, float* temparray, int ret_limit, int mask_dim, YOLO::TASK::TRT::TaskFlowTRTContext* ctx){
+void decode_boxes(float* predict, int box_count, int class_count, float confidence_threshold, float nms_threshold, float* d2s_matrix, float* temparray, int ret_limit, int mask_dim, YOLO::TASK::TRT::TaskFlowTRTContext* ctx){
     int threads = std::min(256, box_count);
     int blocks = (box_count + threads - 1) / threads;
     decode_nfb_kernel<<<blocks, threads, 0, ctx->stream>>>(predict, box_count, class_count, confidence_threshold, d2s_matrix, mask_dim, temparray, ret_limit);
@@ -157,7 +157,7 @@ static __global__ void decode_mask_kernel(
     }
 }
 
-static void decode_mask(
+void decode_mask(
         float* mask_predict, int mask_width, int mask_height, int mask_dim, float mask_threshold,
         float left, float top, float* mask_weights,
         unsigned char* mask_out, int out_width, int out_height,
@@ -166,89 +166,4 @@ static void decode_mask(
     dim3 block(32, 32);
     dim3 grid(out_width + 31 / 32, out_height + 31 / 32);
     decode_mask_kernel<<<grid, block, 0, ctx->stream>>>(mask_predict, mask_width, mask_height, mask_dim, mask_threshold, left, top, mask_weights, mask_out, out_width, out_height);
-}
-
-
-struct bbox_buffer{
-    unsigned char* data;
-    unsigned char* data_device;
-    int width;
-    int height;
-};
-
-void postprocess_segment_by_cuda(
-        // 检测头相关
-        float* predict, int box_count, int class_count,
-        // mask头相关
-        float* mask_predict, int mask_w, int mask_h, int mask_dim,
-        // 配置相关
-        float confidence_threshold, float nms_threshold, float mask_threshold, int ret_limit,
-        float* d2s_matrix, float* s2d_matrix,
-        int input_w, int input_h,
-        std::vector<YOLO::TASK::SegmentResult>& output,
-        YOLO::TASK::TRT::TaskFlowTRTContext* ctx)
-{
-    YOLO::TRT::CudaMemory<float> temparray;
-    temparray.malloc((YOLO::TASK::TRT::NUM_OF_BOX_ELEMENTS + mask_dim) * ret_limit + 1);
-    // 解析检测头，将合适的box写入temparray，并进行nms操作。此时可以从temparray中提取所有有效的bbox
-    decode_boxes(predict, box_count, class_count, confidence_threshold, nms_threshold, d2s_matrix, temparray.gpu(), ret_limit, mask_dim, ctx);
-    TRACE("postprocess --- decode_boxes", ctx);
-    // 将temparray从device拷贝到host，准备尽心下一步mask头解析
-    temparray.memcpy_to_cpu_sync(ctx->stream);
-    TRACE("postprocess --- download predict", ctx);
-    
-    int count = std::min((int)temparray.cpu()[0], ret_limit);
-    output.reserve(count);
-    std::vector<bbox_buffer> temp_buffer;
-    temp_buffer.reserve(count);
-    for(int i = 0; i < count; ++i){
-        float* cur_item = temparray.cpu() + 1 + i * (YOLO::TASK::TRT::NUM_OF_BOX_ELEMENTS + mask_dim);
-        if((int)(cur_item[6]) == 0){
-            // 这个box被抑制了，不需要输出
-            continue;
-        }
-        YOLO::TASK::SegmentResult box;
-        box.left = cur_item[0];
-        box.top = cur_item[1];
-        box.right = cur_item[2];
-        box.bottom = cur_item[3];
-        box.confidence = cur_item[4];
-        box.label = (int)(cur_item[5]);
-
-        float left_t = box.left * s2d_matrix[0] + s2d_matrix[2];
-        float top_t = box.top * s2d_matrix[4] + s2d_matrix[5];
-        float right_t = box.right * s2d_matrix[0] + s2d_matrix[2];
-        float bottom_t = box.bottom * s2d_matrix[4] + s2d_matrix[5];
-        float box_w = right_t - left_t;
-        float box_h = bottom_t - top_t;
-        float scale_x = mask_w / (float)input_w;
-        float scale_y = mask_h / (float)input_h;
-        int mask_out_w = (int)(box_w * scale_x + 0.5f);
-        int mask_out_h = (int)(box_h * scale_y + 0.5f);
-    
-        if(mask_out_w > 0 && mask_out_h > 0){
-            temp_buffer.emplace_back(bbox_buffer{nullptr, nullptr, mask_out_w, mask_out_h});
-            bbox_buffer& box_buf = temp_buffer.back();
-            CUDA_CHECK(cudaMallocHost((void**)&box_buf.data, mask_out_w * mask_out_h));
-            CUDA_CHECK(cudaMalloc((void**)&box_buf.data_device, mask_out_w * mask_out_h));
-            decode_mask(mask_predict, mask_w, mask_h, mask_dim, mask_threshold,
-                    left_t * scale_x, top_t * scale_y, cur_item + 7, box_buf.data_device, mask_out_w, mask_out_h, ctx);
-            CUDA_CHECK(cudaMemcpyAsync(box_buf.data, box_buf.data_device, mask_out_w * mask_out_h, cudaMemcpyDeviceToHost, ctx->stream));
-			output.emplace_back(box);
-        }
-        
-    }
-
-    CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
-    TRACE("postprocess --- decode mask", ctx);
-
-    for(int i = 0; i < (int)temp_buffer.size(); ++i){
-        bbox_buffer& box = temp_buffer[i];
-        if(box.data != nullptr){
-            output[i].mask = cv::Mat(box.height, box.width, CV_8UC1, box.data).clone();
-            CUDA_CHECK(cudaFreeHost(box.data));
-            CUDA_CHECK(cudaFree(box.data_device));
-        }
-    }
-    TRACE("postprocess --- clear tempbuffer", ctx);
 }

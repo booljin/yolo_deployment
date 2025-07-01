@@ -14,7 +14,7 @@ namespace YOLO{namespace TASK{namespace TRT{
 
 class Detect: public TaskTRT{
 public:
-    Detect(std::shared_ptr<YOLO::TRT::Model> model);
+    Detect(YOLO::MODEL::TRT::Model* model);
     ~Detect() override;
 public:
     TaskResult inference(TaskFlowContext*, void* work_space);

@@ -1,9 +1,11 @@
 ﻿#include "workspace_trt.h"
 
+#include <tuple>
+
 #include "model_trt.h"
 #include "yolo_defines.h"
 
-using namespace YOLO::TRT;
+using namespace YOLO::WORKSPACE::TRT;
 
 WorkSpace::WorkSpace(){
 }
@@ -12,8 +14,8 @@ WorkSpace::~WorkSpace(){
     release();
 }
 
-bool WorkSpace::create_by(const std::vector<std::shared_ptr<YOLO::ModelAny>>& models){
-    if(_type != ModelType::MODEL_TYPE_UNKNOWN){
+bool WorkSpace::create_by(const std::vector<YOLO::MODEL::TRT::Model*>& models){
+    if(_type != YOLO::ModelType::MODEL_TYPE_UNKNOWN){
         // 创建过
         return false;
     }
@@ -22,31 +24,31 @@ bool WorkSpace::create_by(const std::vector<std::shared_ptr<YOLO::ModelAny>>& mo
         return false;
     }
     for(auto& model: models){
-        if(model->type() != ModelType::MODEL_TYPE_TRT){
+		if(model->type() != YOLO::ModelType::MODEL_TYPE_TRT){
             // 模型类型不匹配，我只能处理TensorRT模型
             release();
             return false;
         }
-        _contexts.emplace_back(static_cast<Model*>(model.get())->create_context_trt());
+        _contexts[model->alias()] = model->create_context_trt();
+        //_contexts.emplace_back(static_cast<Model*>(model)->create_context_trt());
     }
-    _type = ModelType::MODEL_TYPE_TRT;
+    _type = YOLO::ModelType::MODEL_TYPE_TRT;
     return true;
 }
 
-void* WorkSpace::context_at(int index){
-    return at(index);
-}
-
-nvinfer1::IExecutionContext* WorkSpace::at(int index){
-    return _contexts[index];
+nvinfer1::IExecutionContext* WorkSpace::at(const std::string& alias){
+    if(_contexts.find(alias) != _contexts.end())
+        return _contexts[alias];
+    else
+        return nullptr;
 }
 
 void WorkSpace::release(){
     for(auto& context: _contexts){
-        if(context != nullptr){
-            delete context;
+        if(context.second != nullptr){
+            delete context.second;
         }
     }
     _contexts.clear();
-    _type = ModelType::MODEL_TYPE_UNKNOWN;
+    _type = YOLO::ModelType::MODEL_TYPE_UNKNOWN;
 }

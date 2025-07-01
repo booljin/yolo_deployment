@@ -13,8 +13,9 @@
 namespace YOLO{namespace TASK{namespace TRT{
 
 class Classify : public TaskTRT{
+friend class TaskFlow;
 public:
-    Classify(std::shared_ptr<YOLO::TRT::Model> model);
+    Classify(YOLO::MODEL::TRT::Model* model);
     ~Classify() override;
 public:
 	TaskResult inference(TaskFlowContext*, void* work_space);

@@ -14,11 +14,25 @@ enum ModelType {
     MODEL_TYPE_PYTORCH = 5, // PyTorch
 };
 
+enum TaskType{
+    TASK_UNKNOWN = 0,
+    TASK_CLASSIFY = 1,
+    TASK_DETECT = 2,
+    TASK_SEGMENT = 3,
+};
+
 class YoloException : public std::exception {
 public:
 	YoloException(const std::string& w) : exception(w.c_str()){
 	}
 };
 
+
+
 }
+
+namespace YOLO{namespace IMPL{
+template<typename Backend>
+struct BackendTraits;
+}}
 #endif // __YOLO_DEFINES_H__

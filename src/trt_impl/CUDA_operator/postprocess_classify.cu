@@ -8,7 +8,7 @@
 void postprocess_classify_by_cuda(
         // 检测头相关
         float* predict, int class_count,
-        std::vector<YOLO::TASK::ClassifyResult>& output,
+        YOLO::TASK::ClassifyResult& output,
         YOLO::TASK::TRT::TaskFlowTRTContext* ctx)
 {
     float first_confidence = 0.0f;
@@ -26,7 +26,7 @@ void postprocess_classify_by_cuda(
             second_label = i;
         }
     }
-    output.emplace_back(YOLO::TASK::ClassifyResult{first_label, first_confidence});
-    output.emplace_back(YOLO::TASK::ClassifyResult{second_label, second_confidence});
+    output.emplace_back(YOLO::TASK::ClassifyResultItem{first_label, first_confidence});
+    output.emplace_back(YOLO::TASK::ClassifyResultItem{second_label, second_confidence});
     return;
 }

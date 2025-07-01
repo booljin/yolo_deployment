@@ -16,9 +16,12 @@ set(TensorRT_DIR "E:/work/print/flower/thirdpart/TensorRT-10.10.0.31/cmake")
 
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenCV)
-find_package(TensorRT 10 REQUIRED COMPONENTS nvinfer)
+find_package(TensorRT 10 REQUIRED COMPONENTS nvinfer nvonnxparser)
 find_package(spdlog REQUIRED)
 find_package(fmt REQUIRED)
+
+set(ONNXRuntime_DIR "E:/work/print/flower/thirdpart/onnxruntime-win-x64-1.22.0/cmake")
+find_package(ONNXRuntime REQUIRED)
 
 set(export
 	include/yolo.h
@@ -32,12 +35,13 @@ set(base
 	include/yolo_defines.h
 	include/yolo_scheduler.h
 	src/task_utils.cpp
-	src/yolo_scheduler.cpp
+	#src/yolo_scheduler.cpp
 )
 source_group("base" FILES ${base} ${export})
 
 set(tensorrt
 	src/trt_impl/yolo_trt_utils.h
+	src/trt_impl/yolo_trt_utils.cpp
 	src/trt_impl/model_trt.h
 	src/trt_impl/model_trt.cpp
 	src/trt_impl/workspace_trt.h
@@ -51,6 +55,8 @@ set(tensorrt
 	src/trt_impl/task_detect_trt.cpp
 	src/trt_impl/task_segment_trt.h
 	src/trt_impl/task_segment_trt.cpp
+
+	include/impl/yolo_trt.h
 )
 source_group("tensorrt" FILES ${tensorrt})
 
@@ -62,19 +68,22 @@ set(cuda_operator
 )
 source_group("tensorrt/cuda_operator" FILES ${cuda_operator})
 
-add_library(${PROJECT_NAME} STATIC
+add_library(trt STATIC
     ${base}
 	${export}
 	${tensorrt}
 	${cuda_operator}
 )
+add_library(${PROJECT_NAME}::trt ALIAS trt)
 
-target_include_directories(${PROJECT_NAME}
+
+target_include_directories(trt
 	PUBLIC include
+	PUBLIC include/impl
 	PRIVATE src
 )
 
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(trt
 	TensorRT::nvinfer
 
 	${CUDA_cudart_LIBRARY}
@@ -112,11 +121,13 @@ target_include_directories(test
 )
 
 target_link_libraries(test
-	${PROJECT_NAME}
+	${PROJECT_NAME}::trt
 	${OpenCV_LIBS}
 	${CUDA_cudart_LIBRARY}
 	${CUDA_LIBRARIES}
 	spdlog::spdlog
 	TensorRT::nvinfer
+	TensorRT::nvonnxparser
+	ONNXRuntime
 )
 

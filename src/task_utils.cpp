@@ -2,14 +2,28 @@
 #include <opencv2/opencv.hpp>
 #include <sstream>
 
-cv::Mat YOLO::TASK::draw_mask(const std::vector<YOLO::TASK::SegmentResult>& bboxes, cv::Mat& mask_img){
-    for(auto& bbox: bboxes){
-		cv::Mat mask;
-		cv::resize(bbox.mask, mask, cv::Size(bbox.right - bbox.left, bbox.bottom - bbox.top), 0, 0, cv::INTER_NEAREST);
-		cv::Mat roi = mask_img(cv::Rect(bbox.left, bbox.top, bbox.right - bbox.left, bbox.bottom - bbox.top));
-        roi.setTo(cv::Scalar(0, 0, 255), mask);
-    }
-    return mask_img;
+cv::Mat YOLO::TASK::draw_mask(const YOLO::TASK::SegmentResult& sr, cv::Mat& mask_img, bool origin){
+	cv::Mat combin_mask = sr.masks[0].second.clone();
+	for (int i = 1; i < sr.masks.size(); ++i) {
+		combin_mask.setTo(sr.masks[i].second, sr.masks[i].second);
+	}
+	cv::Mat ret_img = mask_img;
+	if(!origin)
+		ret_img = cv::Mat(mask_img.rows, mask_img.cols, CV_8UC3, cv::Scalar(0, 0, 0));
+	float scale = std::min(combin_mask.rows / (float)mask_img.rows, combin_mask.cols / (float)mask_img.cols);
+	
+	cv::Mat combin_mask_n;
+	cv::resize(combin_mask(cv::Rect(
+			(combin_mask.cols - scale * mask_img.cols) / 2,
+			(combin_mask.rows - scale * mask_img.rows) / 2,
+			scale * mask_img.cols,
+			scale * mask_img.rows
+		)),
+		combin_mask_n, cv::Size(mask_img.cols, mask_img.rows), 0, 0, cv::INTER_NEAREST
+	);
+	ret_img.setTo(cv::Scalar(0, 0, 255), combin_mask_n);
+
+    return ret_img;
 }
 
 std::string dump_tracer(YOLO::TASK::TaskFlowContext* ctx){
