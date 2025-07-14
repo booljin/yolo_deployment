@@ -132,6 +132,7 @@ bool Model::is_engine_file_valid(const std::filesystem::path& onnx, const std::f
 
 
 void Model::convert_from_onnx(const std::filesystem::path& onnx, const std::filesystem::path& engine){
+	std::unique_lock<std::mutex> lock(_task_type_mtx);
 	nvinfer1::IBuilder* builder = nvinfer1::createInferBuilder(gLogger);
 
 
@@ -149,6 +150,25 @@ void Model::convert_from_onnx(const std::filesystem::path& onnx, const std::file
 	//{
 	//	std::cout << parser->getError(i)->desc() << std::endl;
 	//}
+
+	// 读取模型维度，判断任务类型
+	auto output1 = network->getOutput(1);
+	if(output1){
+		// 分割任务有两个输出，一个是检测框，一个是mask。其中mask有4个维度：batch,maskdim,h,w
+		_task_type = YOLO::TaskType::TASK_SEGMENT;
+	} else {
+		auto output0 = network->getOutput(0);
+		auto dims_0 = output0->getDimensions();
+		if (dims_0.nbDims == 3) {
+			// 检测任务有3个维度：batch，bbox， box_count
+			_task_type = YOLO::TaskType::TASK_DETECT;
+		}
+		else {
+			// 分类任务有2个维度：batch， class_count
+			_task_type = YOLO::TaskType::TASK_CLASSIFY;
+		}
+	}
+	lock.unlock();
 
 	nvinfer1::IBuilderConfig* config = builder->createBuilderConfig();
 

@@ -28,6 +28,7 @@ public:
     float* input;
 	int key;
     cv::Mat mask;
+    YOLO::UTILS::TRT::CudaMemory<float> roi;
 public:
     TaskFlowTRTContext();
     ~TaskFlowTRTContext();

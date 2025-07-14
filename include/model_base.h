@@ -21,7 +21,7 @@ public:
 
 public:
     inline YOLO::ModelType type() const{ return _type; }
-    inline YOLO::TaskType task_type() const{ return _task_type; }
+    virtual inline YOLO::TaskType task_type() { return _task_type; }
     inline Status status() const{ return _status; }
 
     inline double confidence_threshold() const {return _confidence_threshold;}

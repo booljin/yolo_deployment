@@ -13,7 +13,10 @@
 
 #include "spdlog/spdlog.h"
 
-void preprocess_by_cuda(cv::Mat& img, float* input_buffer, int dst_h, int dst_w, float* d2s_matrix, unsigned char* mask, int mask_h, int mask_w, YOLO::TASK::TRT::TaskFlowTRTContext* ctx);
+void preprocess_by_cuda(cv::Mat& img, float* input_buffer, int dst_h, int dst_w, float* d2s_matrix,
+    unsigned char* mask, int mask_h, int mask_w,
+    float* roi,
+    YOLO::TASK::TRT::TaskFlowTRTContext* ctx);
 
 using namespace YOLO::TASK::TRT;
 
@@ -130,6 +133,11 @@ void TaskFlow::get_preprocess_input(TaskFlowTRTContext& ctx, int H, int W, int C
     */
     int src_w = ctx.img.cols;
     int src_h = ctx.img.rows;
+    if(ctx.roi.len() > 0){
+        // 如果roi不为空，说明是裁剪过的图片
+        src_w = (int)(ctx.roi.cpu()[2] - ctx.roi.cpu()[0]);
+        src_h = (int)(ctx.roi.cpu()[3] - ctx.roi.cpu()[1]);
+    }
     float scale = std::min((float)H / (float)src_h, (float)W / (float)src_w);
     // 这个是从原图坐标到目标图的缩放矩阵A
     float s2d_matrix_t[6] = {scale, 0, (W - (scale * src_w)) / 2, 0, scale, (H - (scale * src_h)) / 2};
@@ -195,6 +203,7 @@ std::vector<YOLO::TASK::TaskResult> TaskFlow::execute(cv::Mat& img, YOLO::WORKSP
             cur_task = cur_task->successors[0].get();
             //TODO: 不同类型模型的后处理不一样
             if(parent_task->task->task_type() == YOLO::TaskType::TASK_SEGMENT){
+                // 当前任务是分割，后续任务需要基于分割mask重新生成预处理图片
                 if(cur_task){
                     // 分割后接任何模型，后续模型需要根据mask重新生成blob
 					auto seg_ret = std::get_if<YOLO::TASK::SegmentResult>(&result);
@@ -205,7 +214,49 @@ std::vector<YOLO::TASK::TaskResult> TaskFlow::execute(cv::Mat& img, YOLO::WORKSP
 						}
 						ctx.mask = seg_ret->masks[0].second;
 					}
+                    // 如果前置任务有roi，那么box需要针对roi进行偏移
+                    if(ctx.roi.len() > 0){
+                        for(auto& b:seg_ret->bboxes){
+                            b.left += ctx.roi.cpu()[0];
+                            b.top += ctx.roi.cpu()[1];
+                            b.right += ctx.roi.cpu()[0];
+                            b.bottom += ctx.roi.cpu()[1];
+                        }
+                        ctx.roi.release();
+                    }
                 }
+            } else {
+				auto detect_ret = std::get_if<YOLO::TASK::DetectResult>(&result);
+				// 如果前置任务有roi，那么box需要针对roi进行偏移
+				if (ctx.roi.len() > 0) {
+					for (auto& b : (*detect_ret)) {
+						b.left += ctx.roi.cpu()[0];
+						b.top += ctx.roi.cpu()[1];
+						b.right += ctx.roi.cpu()[0];
+						b.bottom += ctx.roi.cpu()[1];
+					}
+					ctx.roi.release();
+				}
+				// 当前任务是分类，后续任务需要根据分类结果中概率最高的box重新生成预处理图片
+				if(cur_task){
+                    if(detect_ret->size() > 0){
+                        
+                        float max_confidence = -1;
+                        ctx.roi.malloc(4);
+						int new_key = cur_task->task->_input_height * cur_task->task->_input_width;
+                        for(auto& b: (*detect_ret)){
+                            if(b.confidence > max_confidence){
+                                max_confidence = b.confidence;
+                                ctx.roi.cpu()[0] = b.left;
+                                ctx.roi.cpu()[1] = b.top;
+                                ctx.roi.cpu()[2] = b.right;
+                                ctx.roi.cpu()[3] = b.bottom;
+                            }
+                        }
+						ctx.preprocessing_cache[new_key].blob.release();
+                    }
+                }
+
             }
         }
         results.emplace_back(std::move(result));

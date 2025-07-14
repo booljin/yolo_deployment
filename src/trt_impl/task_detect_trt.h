@@ -23,6 +23,8 @@ private:
     int _class_count;
     int _box_count;
     int _output0_size;
+
+    int _shape; // 0-nfb, 1-nbf
 };
 
 

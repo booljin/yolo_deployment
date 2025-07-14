@@ -23,7 +23,7 @@ public:
 private:
 	static void postprocess_segment_normal(
 		// 检测头相关
-		float* predict, int box_count, int class_count,
+		float* predict, int box_count, int class_count, int shape,
 		// mask头相关
 		float* mask_predict, int mask_w, int mask_h, int mask_dim,
 		// 配置相关
@@ -43,6 +43,8 @@ private:
 
     int _output0_size;
     int _output1_size;
+
+    int _shape; // 0-nfb, 1-nbf
 };
 
 }}}

@@ -62,13 +62,62 @@ static __global__ void decode_nfb_kernel(float* predict, int box_count, int clas
     }
 }
 
+// NBF:batch|box|feature [1,8400,37]
+// 这不是yolo模型检测头默认输出形状，但经过转置，更方便读取连续的mask dim权重
+static __global__ void decode_nbf_kernel(float* predict, int box_count, int class_count, float confidence_threshold, float* d2s_matrix, int mask_dim, float* temparray, int ret_limit){
+    int position = blockDim.x * blockIdx.x + threadIdx.x;
+    if(position >= box_count) return;
+    
+    // 计算每个anchor的置信度
+    float* item = predict + (class_count + 4 + mask_dim) * position;
+    float confidence = item[4];
+    int label = 0;
+    for(int i = 1; i < class_count; ++i){
+        if(*item > confidence){
+            confidence = item[4+i];
+            label = i;
+        }
+    }
+    if(confidence < confidence_threshold) return;
+
+    int index = atomicAdd(temparray, 1);
+    if(index >= ret_limit) return;
+
+    // 计算每个anchor的坐标
+    // 1,获取推理结果
+    float cx = item[0];
+    float cy = item[1];
+    float w = item[2];
+    float h = item[3];
+    // 2,计算rect坐标
+    float left = cx - 0.5f * w;
+    float top = cy - 0.5f * h;
+    float right = cx + 0.5f * w;
+    float bottom = cy + 0.5f * h;
+    // 3,仿射变换回原图坐标
+    left = left * d2s_matrix[0] + d2s_matrix[2];
+    top = top * d2s_matrix[4] + d2s_matrix[5];
+    right = right * d2s_matrix[0] + d2s_matrix[2];
+    bottom = bottom * d2s_matrix[4] + d2s_matrix[5];
+    // 4,将结果写入temparray
+    float* dest = temparray + 1 + index * (YOLO::TASK::TRT::NUM_OF_BOX_ELEMENTS + mask_dim);
+    *dest++ = left;         // left
+    *dest++ = top;          // top
+    *dest++ = right;            // rihgt
+    *dest++ = bottom;            // bottom
+    *dest++ = confidence;   // confidence
+    *dest++ = label;        // class
+    *dest++ = 1.0f;         // keep_flag
+    memcpy(dest, item + 4 + class_count, mask_dim * sizeof(float));
+}
+
 static __device__ float box_iou(float left_a, float top_a, float right_a, float bottom_a,
                                 float left_b, float top_b, float right_b, float bottom_b){
     // 计算两个box的交集
     float left = left_a > left_b ? left_a : left_b;
     float top = top_a > top_b ? top_a : top_b;
     float right = right_a < right_b ? right_a : right_b;
-    float bottom = bottom_a < bottom_b ? bottom_b : bottom_a;
+    float bottom = bottom_a < bottom_b ? bottom_a : bottom_b;
     
     if(left >= right || top >= bottom) return 0.0f; // 没有交集
 
@@ -117,10 +166,27 @@ static __global__ void nms_kernel(float* temparray, int bbox_len, int ret_limit,
     }
 }
 
-void decode_boxes(float* predict, int box_count, int class_count, float confidence_threshold, float nms_threshold, float* d2s_matrix, float* temparray, int ret_limit, int mask_dim, YOLO::TASK::TRT::TaskFlowTRTContext* ctx){
+/*
+ * @brief 解码预测结果
+ * @param predict 预测头结果
+ * @param shape 预测头形状 0-nfb, 1-nbf
+ * @param box_count 预测框数量
+ * @param class_count 类别数量
+ * @param confidence_threshold 置信度阈值
+ * @param nms_threshold NMS阈值
+ * @param d2s_matrix 仿射变换矩阵
+ * @param temparray 临时数组，用于存储解码后的结果
+ * @param ret_limit 返回的最大结果数量
+ * @param mask_dim mask维度
+ * @param ctx 上下文对象，包含CUDA流等信息
+*/
+void decode_boxes(float* predict, int shape, int box_count, int class_count, float confidence_threshold, float nms_threshold, float* d2s_matrix, float* temparray, int ret_limit, int mask_dim, YOLO::TASK::TRT::TaskFlowTRTContext* ctx){
     int threads = std::min(256, box_count);
     int blocks = (box_count + threads - 1) / threads;
-    decode_nfb_kernel<<<blocks, threads, 0, ctx->stream>>>(predict, box_count, class_count, confidence_threshold, d2s_matrix, mask_dim, temparray, ret_limit);
+    if(shape == 0)
+        decode_nfb_kernel<<<blocks, threads, 0, ctx->stream>>>(predict, box_count, class_count, confidence_threshold, d2s_matrix, mask_dim, temparray, ret_limit);
+    else
+        decode_nbf_kernel<<<blocks, threads, 0, ctx->stream>>>(predict, box_count, class_count, confidence_threshold, d2s_matrix, mask_dim, temparray, ret_limit);
     CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
 
     threads = std::min(256, ret_limit);

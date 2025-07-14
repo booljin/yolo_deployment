@@ -49,6 +49,7 @@ using DetectResult = std::vector<DetectResultItem>;
 using TaskResult = std::variant<std::monostate, ClassifyResult, DetectResult, SegmentResult>;
 
 cv::Mat draw_mask(const SegmentResult& bboxes, cv::Mat& mask_img, bool origin = false);
+cv::Mat draw_box(const DetectResult& bboxes, cv::Mat& mask_img);
 
 struct TaskFlowContext{
     //float* d2s_matrix = nullptr;

@@ -26,6 +26,15 @@ cv::Mat YOLO::TASK::draw_mask(const YOLO::TASK::SegmentResult& sr, cv::Mat& mask
     return ret_img;
 }
 
+cv::Mat YOLO::TASK::draw_box(const YOLO::TASK::DetectResult& dr, cv::Mat& mask_img){
+	cv::Mat ret_img = mask_img.clone();
+	for(auto& b:dr){
+		cv::rectangle(ret_img, cv::Point(b.left, b.top), cv::Point(b.right, b.bottom), cv::Scalar(0, 255, 0), 2);
+	}
+	
+    return ret_img;
+}
+
 std::string dump_tracer(YOLO::TASK::TaskFlowContext* ctx){
     std::ostringstream ss;
     ss << std::endl << "  ------------------ trace ------------------" << std::endl;

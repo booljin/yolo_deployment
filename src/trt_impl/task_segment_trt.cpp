@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-void decode_boxes(float* predict, int box_count, int class_count, float confidence_threshold, float nms_threshold, float* d2s_matrix, float* temparray, int ret_limit, int mask_dim, YOLO::TASK::TRT::TaskFlowTRTContext* ctx);
+void decode_boxes(float* predict, int shape, int box_count, int class_count, float confidence_threshold, float nms_threshold, float* d2s_matrix, float* temparray, int ret_limit, int mask_dim, YOLO::TASK::TRT::TaskFlowTRTContext* ctx);
 void decode_mask(
         float* mask_predict, int mask_width, int mask_height, int mask_dim, float mask_threshold,
         float left, float top, float* mask_weights,
@@ -26,8 +26,16 @@ Segment::Segment(YOLO::MODEL::TRT::Model* model) : TaskTRT(model->alias(), model
     _mask_width = dims_o1.d[3];
 
     auto dims_o0 = model->engine()->getTensorShape("output0");
-    _class_count = dims_o0.d[1] - YOLO::TASK::RECT_LEN - _mask_dim;
-    _box_count = dims_o0.d[2];
+    if(dims_o0.d[1] < 1000){
+        _shape = 0;
+        _class_count = dims_o0.d[1] - YOLO::TASK::RECT_LEN - _mask_dim;
+        _box_count = dims_o0.d[2];
+    } else {
+        _shape = 1;
+        _class_count = dims_o0.d[2] - YOLO::TASK::RECT_LEN - _mask_dim;
+        _box_count = dims_o0.d[1];
+
+    }
 
     _input_size = _input_batch * _input_channel * _input_height * _input_width;
     _output0_size = _input_batch * dims_o0.d[1] * _box_count;
@@ -61,7 +69,7 @@ YOLO::TASK::TaskResult Segment::inference(TaskFlowTRTContext* ctx, nvinfer1::IEx
 	cudaStreamSynchronize(ctx->stream);
 	TRACE("inference", ctx);
     YOLO::TASK::SegmentResult result;
-    Segment::postprocess_segment_normal(output0.gpu(), _box_count, _class_count,
+    Segment::postprocess_segment_normal(output0.gpu(), _box_count, _class_count, _shape,
         output1.gpu(), _mask_width, _mask_height, _mask_dim,
         _confidence_threshold, _nms_threshold, _mask_threshold, YOLO::TASK::TRT::BBOX_LIMIT,
         ctx->preprocessing_cache[ctx->key].d2s_matrix.cpu(), ctx->preprocessing_cache[ctx->key].s2d_matrix.cpu(),
@@ -100,7 +108,7 @@ struct bbox_buffer{
 
 void Segment::postprocess_segment_normal(
         // 检测头相关
-        float* predict, int box_count, int class_count,
+        float* predict, int box_count, int class_count, int shape,
         // mask头相关
         float* mask_predict, int mask_w, int mask_h, int mask_dim,
         // 配置相关
@@ -113,7 +121,7 @@ void Segment::postprocess_segment_normal(
     YOLO::UTILS::TRT::CudaMemory<float> temparray;
     temparray.malloc((YOLO::TASK::TRT::NUM_OF_BOX_ELEMENTS + mask_dim) * ret_limit + 1);
     // 解析检测头，将合适的box写入temparray，并进行nms操作。此时可以从temparray中提取所有有效的bbox
-    decode_boxes(predict, box_count, class_count, confidence_threshold, nms_threshold, d2s_matrix, temparray.gpu(), ret_limit, mask_dim, ctx);
+    decode_boxes(predict, shape, box_count, class_count, confidence_threshold, nms_threshold, d2s_matrix, temparray.gpu(), ret_limit, mask_dim, ctx);
     TRACE("postprocess --- decode_boxes", ctx);
     // 将temparray从device拷贝到host，准备尽心下一步mask头解析
     temparray.memcpy_to_cpu_sync();
@@ -142,6 +150,10 @@ void Segment::postprocess_segment_normal(
         float top_t = box.top * s2d_matrix[4] + s2d_matrix[5];
         float right_t = box.right * s2d_matrix[0] + s2d_matrix[2];
         float bottom_t = box.bottom * s2d_matrix[4] + s2d_matrix[5];
+        if(left_t < 0) left_t = 0;
+        if(top_t < 0) top_t = 0;
+		if (right_t > input_w) right_t = input_w;
+		if (bottom_t > input_h) bottom_t = input_h;
         float box_w = right_t - left_t;
         float box_h = bottom_t - top_t;
         float scale_x = mask_w / (float)input_w;
@@ -185,7 +197,7 @@ void Segment::postprocess_segment_normal(
             output.masks.emplace_back(std::make_pair(class_id, mask));
         }
         cv::Mat box_mask = cv::Mat(box.height, box.width, CV_8UC1, box.mask.cpu());
-        mask(cv::Rect(box.left, box.top, box.width, box.height)).setTo(255, box_mask);
+        mask(cv::Rect(box.left, box.top, box.width, box.height)).setTo(cv::Scalar(255), box_mask);
 		++i;
     }
     TRACE("postprocess --- clear tempbuffer", ctx);
